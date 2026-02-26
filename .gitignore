@@ -1,23 +1,34 @@
-# Python
+# === Python / Flask backend ===
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+*.db
+*.sqlite3
 venv/
 env/
-*.db
-
-# Flask
 instance/
 .env
+*.log
 
-# Node / React
+# === Node / React frontend ===
 frontend/node_modules/
 frontend/.env
+frontend/.env.*
 frontend/build/
 frontend/dist/
+frontend/.cache/
+frontend/coverage/
 
-# OS and IDE
+# === OS and IDE files ===
 .DS_Store
 .vscode/
 .idea/
+*.swp
+*.swo
+Thumbs.db
+
+# === Misc ===
+# macOS metadata
+.AppleDouble
+.LSOverride
