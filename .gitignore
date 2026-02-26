@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+*.db
+
+# Flask
+instance/
+.env
+
+# Node / React
+frontend/node_modules/
+frontend/.env
+frontend/build/
+frontend/dist/
+
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/
