@@ -6,9 +6,10 @@ const VideoFeed = () => {
   const [blink, setBlink] = useState(null);
   const [sequence, setSequence] = useState("");
   const [decodedText, setDecodedText] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
+  // const [aiResponse, setAiResponse] = useState("");
   const videoRef = useRef(null);
   const socket = useRef(null);
+  const [chatHistory, setChatHistory] = useState([]);
 
   useEffect(() => {
     socket.current = io("http://127.0.0.1:5002");
@@ -23,14 +24,16 @@ const VideoFeed = () => {
       setSequence("");
     });
 
-    socket.current.on("ai_reply", (data) => {
-      setAiResponse(data.reply);
-    });
+
+    // socket.current.on("ai_reply", (data) => {
+    //   setAiResponse(data.reply);
+    // });
 
     return () => {
       socket.current.disconnect();
     };
   }, []);
+  
 
   useEffect(() => {
     const startVideo = async () => {
@@ -45,21 +48,39 @@ const VideoFeed = () => {
   }, []);
 
   const handleSendToAI = async () => {
-    if (!decodedText.trim()) return;
-    try {
-      const response = await axios.post("http://127.0.0.1:5002/ask_ai", {
-        message: decodedText,
-      });
-      setAiResponse(response.data.reply);
-      setDecodedText(""); // clear message after sending
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-  };
+  if (!decodedText.trim()) return;
+  const userMsg = decodedText;
+  setChatHistory([...chatHistory, { sender: "user", text: userMsg }]);
+  try {
+    const response = await axios.post("http://127.0.0.1:5002/ask_ai", {
+      message: userMsg,
+    });
+    setChatHistory((prev) => [
+      ...prev,
+      { sender: "BlinkAI", text: response.data.reply },
+    ]);
+    setDecodedText("");
+  } catch (error) {
+    console.error("Error sending message:", error);
+  }
+};
 
   return (
     <div className="flex flex-col items-center p-8 bg-gray-100 min-h-screen">
-      <h1 className="text-3xl font-bold mb-4 text-blue-600">BlinkAI Chat</h1>
+      <h1 className="text-4xl font-extrabold mb-6 text-blue-700 text-center">
+  BlinkAI — Hands-Free Communication
+</h1>
+
+<div className="p-4 text-lg font-semibold text-gray-700">
+  <span className="text-green-700">Detected Blink:</span> {blink || "Waiting..."}
+</div>
+
+<button
+  onClick={handleSendToAI}
+  className="mt-4 px-6 py-3 bg-blue-700 text-white text-xl rounded-lg hover:bg-blue-800 transition-all duration-300"
+>
+  Send to AI
+</button>
       <video
         ref={videoRef}
         autoPlay
@@ -75,6 +96,13 @@ const VideoFeed = () => {
         </h2>
 
         <button
+  onClick={() => axios.post("http://127.0.0.1:5002/calibrate")}
+  className="mt-4 px-6 py-3 bg-green-600 text-white text-xl rounded-lg hover:bg-green-700"
+>
+  Calibrate Blink
+</button>
+
+        <button
           onClick={handleSendToAI}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
@@ -82,12 +110,20 @@ const VideoFeed = () => {
         </button>
       </div>
 
-      {aiResponse && (
-        <div className="mt-6 bg-white p-4 rounded-xl shadow-md w-3/4">
-          <h3 className="font-semibold text-gray-700">AI Response:</h3>
-          <p className="text-gray-800 mt-2">{aiResponse}</p>
-        </div>
-      )}
+      {chatHistory.length > 0 && (
+  <div className="mt-6 bg-white p-4 rounded-xl shadow-md w-3/4 max-h-80 overflow-y-auto">
+    {chatHistory.map((msg, idx) => (
+      <div
+        key={idx}
+        className={`my-2 p-2 rounded-lg ${
+          msg.sender === "user" ? "bg-blue-100 text-blue-800 self-end" : "bg-gray-100 text-gray-800 self-start"
+        }`}
+      >
+        <strong>{msg.sender === "user" ? "You:" : "BlinkAI:"}</strong> {msg.text}
+      </div>
+    ))}
+  </div>
+)}
     </div>
   );
 };

@@ -81,6 +81,8 @@ def detect_blinks():
 # thread.start()
 eventlet.spawn(detect_blinks)\
 
+conversation_history = []
+
 @app.route("/ask_ai", methods=["POST"])
 def ask_ai():
     data = request.get_json()
@@ -89,6 +91,8 @@ def ask_ai():
     if not user_message:
         return jsonify({"response": "No message provided"}), 400
 
+    conversation_history.append({"role": "user", "content": user_message})
+
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
         "Content-Type": "application/json"
@@ -96,21 +100,40 @@ def ask_ai():
 
     payload = {
         "model": "mistral-tiny",  # or your available model
-        "messages": [
-            {"role": "system", "content": "You are BlinkAI, a helpful assistant for accessibility communication."},
-            {"role": "user", "content": user_message}
-        ]
+        "messages": [{"role": "system", "content": "You are BlinkAI, a calm and accessible assistant designed to help people communicate via eye blinks."}]
+                    + conversation_history
     }
 
     try:
         response = requests.post(AI_API_URL, headers=headers, json=payload)
         result = response.json()
         ai_reply = result["choices"][0]["message"]["content"]
+
+        # Store reply in conversation history
+        conversation_history.append({"role": "assistant", "content": ai_reply})
+
         socketio.emit("ai_reply", {"reply": ai_reply})
         return jsonify({"reply": ai_reply})
+
     except Exception as e:
         print("AI request failed:", e)
         return jsonify({"reply": "Error contacting AI service."}), 500
+    
+@app.route("/calibrate", methods=["POST"])
+def calibrate():
+    print("Starting calibration...")
+    open_values = []
+    start = time.time()
+    while time.time() - start < 3:
+        if detector.current_ear is not None:
+            open_values.append(detector.current_ear)
+    if open_values:
+        avg_open = sum(open_values) / len(open_values)
+        detector.EAR_THRESHOLD = avg_open - 0.1
+        print(f"New EAR Threshold set to {detector.EAR_THRESHOLD}")
+        return jsonify({"threshold": detector.EAR_THRESHOLD})
+    return jsonify({"error": "Calibration failed"}), 500
+
 
 if __name__ == "__main__":
     socketio.run(app, host="127.0.0.1", port=5002, debug=True, use_reloader=False)
