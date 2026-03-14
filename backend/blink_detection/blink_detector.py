@@ -15,8 +15,10 @@ class BlinkDetector:
         self.prev_blink_time = 0
         self.blink_start_time = 0
         self.blink_detected = False
-        self.EAR_THRESHOLD = 0.21
+        self.EAR_THRESHOLD = 0.11
         self.LONG_BLINK_DURATION = 0.4  # seconds
+        self.frame_counter = 0
+        self.ear_history = []
 
     def eye_aspect_ratio(self, landmarks, eye_points):
         # EAR formula: vertical / horizontal
@@ -36,18 +38,25 @@ class BlinkDetector:
                 left_EAR = self.eye_aspect_ratio(landmarks, LEFT_EYE)
                 right_EAR = self.eye_aspect_ratio(landmarks, RIGHT_EYE)
                 ear = (left_EAR + right_EAR) / 2.0
+                # self.ear_history.append(ear)
+                # if len(self.ear_history) > 5:
+                #     self.ear_history.pop(0)
+                # ear = sum(self.ear_history) / len(self.ear_history)
+                # print(f"EAR: {ear:.3f}")
 
                 current_time = time.time()
                 if ear < self.EAR_THRESHOLD:
+                    # self.frame_counter += 1
                     if not self.blink_detected:
                         self.blink_start_time = current_time
                         self.blink_detected = True
                 else:
-                    if self.blink_detected:
+                    if self.blink_detected :
                         blink_duration = current_time - self.blink_start_time
                         self.blink_detected = False
                         if blink_duration >= self.LONG_BLINK_DURATION:
                             return "DASH"
                         else:
                             return "DOT"
+                    # self.frame_counter = 0
         return None
