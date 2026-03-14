@@ -1,15 +1,20 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 import cv2
 import threading
 import time
 from blink_detection.blink_detector import BlinkDetector
+import os
+import requests
+from dotenv import load_dotenv
 
-
+load_dotenv()
+AI_API_URL = os.getenv("MISTRAL_API_URL")
+AI_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
@@ -74,7 +79,38 @@ def detect_blinks():
 # thread = threading.Thread(target=detect_blinks)
 # thread.daemon = True
 # thread.start()
-eventlet.spawn(detect_blinks)
+eventlet.spawn(detect_blinks)\
+
+@app.route("/ask_ai", methods=["POST"])
+def ask_ai():
+    data = request.get_json()
+    user_message = data.get("message", "")
+
+    if not user_message:
+        return jsonify({"response": "No message provided"}), 400
+
+    headers = {
+        "Authorization": f"Bearer {AI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "mistral-tiny",  # or your available model
+        "messages": [
+            {"role": "system", "content": "You are BlinkAI, a helpful assistant for accessibility communication."},
+            {"role": "user", "content": user_message}
+        ]
+    }
+
+    try:
+        response = requests.post(AI_API_URL, headers=headers, json=payload)
+        result = response.json()
+        ai_reply = result["choices"][0]["message"]["content"]
+        socketio.emit("ai_reply", {"reply": ai_reply})
+        return jsonify({"reply": ai_reply})
+    except Exception as e:
+        print("AI request failed:", e)
+        return jsonify({"reply": "Error contacting AI service."}), 500
 
 if __name__ == "__main__":
     socketio.run(app, host="127.0.0.1", port=5002, debug=True, use_reloader=False)
