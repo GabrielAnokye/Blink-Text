@@ -7,11 +7,15 @@ from flask_socketio import SocketIO
 import cv2, time, os, requests
 from dotenv import load_dotenv
 from blink_detection.blink_detector import BlinkDetector
+import cohere
 
 load_dotenv()
+print("Loaded Cohere Key:", os.getenv("COHERE_API_KEY"))
 
 AI_API_URL = os.getenv("MISTRAL_API_URL")
 AI_API_KEY = os.getenv("MISTRAL_API_KEY")
+co = cohere.Client(os.getenv("COHERE_API_KEY"))
+
 
 app = Flask(__name__)
 CORS(app)
@@ -82,36 +86,52 @@ eventlet.spawn(detect_blinks)
 
 @app.route("/ask_ai", methods=["POST"])
 def ask_ai():
-    """Forward user text to AI model."""
+    """Send user text to Cohere AI and maintain conversation context."""
     data = request.get_json()
     user_message = data.get("message", "").strip()
+
     if not user_message:
         return jsonify({"reply": "No message provided"}), 400
 
-    conversation_history.append({"role": "user", "content": user_message})
-    headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "mistral-tiny",
-        "messages": [
-            {"role": "system",
-             "content": "You are BlinkAI, a friendly and concise assistant that helps users communicate using eye blinks."}
-        ] + conversation_history
-    }
+    # Convert conversation history into Cohere's accepted format
+    chat_history_formatted = []
+    for entry in conversation_history:
+        if entry["role"] == "user":
+            role = "User"
+        elif entry["role"] == "assistant":
+            role = "Chatbot"
+        else:
+            role = "System"
+        chat_history_formatted.append({"role": role, "message": entry["content"]})
 
     try:
-        response = requests.post(AI_API_URL, headers=headers, json=payload, timeout=30)
-        result = response.json()
-        ai_reply = result["choices"][0]["message"]["content"]
+        print("🔹 Sending to Cohere (with history)...")
+        response = co.chat(
+            model="command-a-03-2025",
+            message=user_message,
+            chat_history=chat_history_formatted,
+            temperature=0.6,
+            preamble=(
+                "You are BlinkAI, an assistive AI designed to help users with limited mobility "
+                "communicate through eye blinks. Respond concisely, empathetically, and clearly."
+            ),
+        )
+
+        ai_reply = response.text.strip()
+
+        # Store conversation context
+        conversation_history.append({"role": "user", "content": user_message})
         conversation_history.append({"role": "assistant", "content": ai_reply})
+
+        print("✅ Cohere response:", ai_reply)
         return jsonify({"reply": ai_reply})
 
     except Exception as e:
-        print("AI request failed:", e)
-        return jsonify({"reply": "AI unavailable. Try again later."}), 500
+        print("❌ Cohere request failed:", e)
+        return jsonify({"reply": f"Error contacting AI service: {e}"}), 500
+
+
+
 
 
 @app.route("/calibrate", methods=["POST"])
