@@ -38,13 +38,28 @@ MORSE_CODE_DICT = {
 }
 
 current_sequence = ""
+current_message = ""
 last_blink_time = time.time()
 DELAY_BETWEEN_LETTERS = 2.0  # seconds
 conversation_history = []
+last_blink_time = time.time()
+pause_threshold = 4  # seconds of inactivity before auto-send
 
 @app.route("/")
 def home():
     return jsonify({"message": "BlinkAI backend is running"})
+
+
+def check_auto_send():
+    global last_blink_time, current_message
+    if time.time() - last_blink_time > pause_threshold and current_message:
+        msg = current_message.strip()
+        if msg:
+            print(f"[AUTO-SEND] Triggered: {msg}")
+            socketio.emit("send_message", {"text": msg})
+            current_message = ""  # reset after send
+            last_blink_time = time.time()
+ 
 
 
 def morse_to_text(sequence):
@@ -54,31 +69,46 @@ def morse_to_text(sequence):
 
 def detect_blinks():
     """Continuously detect blinks from camera feed."""
-    global current_sequence, last_blink_time
+    global current_sequence, last_blink_time, current_message
     while True:
         success, frame = cap.read()
-        eventlet.sleep(0)  # yield control
+        eventlet.sleep(0.03)  # yield control to eventlet loop
         if not success:
             continue
 
         blink_type = detector.detect_blink(frame)
         current_time = time.time()
 
-        # update EAR continuously
-        _ = detector.current_ear  
-
         if blink_type:
             symbol = '.' if blink_type == "DOT" else '-'
             current_sequence += symbol
             last_blink_time = current_time
-            socketio.emit("blink_event", {"type": blink_type, "sequence": current_sequence})
+            socketio.emit("blink_event", {
+                "type": blink_type,
+                "sequence": current_sequence,
+                "confidence": getattr(detector, "blink_confidence", None)
+            })
 
-        # check if pause between blinks indicates a letter end
+        # pause between blinks = end of one letter
         if current_sequence and (current_time - last_blink_time > DELAY_BETWEEN_LETTERS):
             letter = morse_to_text(current_sequence)
             if letter:
                 socketio.emit("letter_event", {"letter": letter})
+
+                # Build full text for backend tracking
+                if letter == "BACKSPACE":
+                    current_message = current_message[:-1]
+                elif letter == "SPACE":
+                    current_message += " "
+                else:
+                    current_message += letter
+
+                print(f"[Decoded] {letter} → Current message: {current_message}")
+
             current_sequence = ""
+
+        # auto-send after inactivity
+        check_auto_send()
 
 
 eventlet.spawn(detect_blinks)
@@ -111,10 +141,14 @@ def ask_ai():
             message=user_message,
             chat_history=chat_history_formatted,
             temperature=0.6,
-            preamble=(
-                "You are BlinkAI, an assistive AI designed to help users with limited mobility "
-                "communicate through eye blinks. Respond concisely, empathetically, and clearly."
-            ),
+            preamble = (
+    "You are BlinkAI, an assistive AI designed to communicate with users who type by blinking. "
+    "Each blink is translated into Morse code, which then becomes text. "
+    "Because blinking is slow and tiring, users may sometimes send incomplete or misspelled words. "
+    "Your job is to interpret their intent as best as possible, infer missing words, and respond naturally. "
+    "Keep replies short, kind, and easy to read. Avoid markdown symbols like asterisks (*); "
+    "instead, use plain text for emphasis when needed."
+),
         )
 
         ai_reply = response.text.strip()
@@ -122,6 +156,10 @@ def ask_ai():
         # Store conversation context
         conversation_history.append({"role": "user", "content": user_message})
         conversation_history.append({"role": "assistant", "content": ai_reply})
+
+        # keep context short
+        if len(conversation_history) > 10:
+            conversation_history[:] = conversation_history[-10:]
 
         print("✅ Cohere response:", ai_reply)
         return jsonify({"reply": ai_reply})
