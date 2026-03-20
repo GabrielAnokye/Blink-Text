@@ -10,11 +10,11 @@ from blink_detection.blink_detector import BlinkDetector
 import cohere
 
 load_dotenv()
-print("Loaded Cohere Key:", os.getenv("COHERE_API_KEY"))
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
 AI_API_URL = os.getenv("MISTRAL_API_URL")
 AI_API_KEY = os.getenv("MISTRAL_API_KEY")
-co = cohere.Client(os.getenv("COHERE_API_KEY"))
+co = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
 
 app = Flask(__name__)
@@ -24,6 +24,9 @@ print(f"Async mode: {socketio.async_mode}")
 
 detector = BlinkDetector()
 cap = cv2.VideoCapture(0)
+camera_available = cap.isOpened()
+if not camera_available:
+    print("Warning: No local camera device available. Blink detection loop is disabled.")
 
 # Morse dictionary including SPACE / BACKSPACE
 MORSE_CODE_DICT = {
@@ -111,7 +114,8 @@ def detect_blinks():
         check_auto_send()
 
 
-eventlet.spawn(detect_blinks)
+if camera_available:
+    eventlet.spawn(detect_blinks)
 
 
 @app.route("/ask_ai", methods=["POST"])
@@ -122,6 +126,9 @@ def ask_ai():
 
     if not user_message:
         return jsonify({"reply": "No message provided"}), 400
+
+    if co is None:
+        return jsonify({"reply": "COHERE_API_KEY is not configured on the backend."}), 503
 
     # Convert conversation history into Cohere's accepted format
     chat_history_formatted = []
@@ -193,4 +200,7 @@ def calibrate():
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="127.0.0.1", port=5002, debug=True, use_reloader=False)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "5002"))
+    debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    socketio.run(app, host=host, port=port, debug=debug, use_reloader=False)

@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
 
+const API_BASE_URL =
+  process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5002";
+
 const MORSE_MAP = {
   A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.",
   G: "--.", H: "....", I: "..", J: ".---", K: "-.-", L: ".-..",
@@ -28,7 +31,7 @@ const VideoFeed = () => {
 
   // Socket connection setup
   useEffect(() => {
-    socket.current = io("http://127.0.0.1:5002", { transports: ["websocket"] });
+    socket.current = io(API_BASE_URL, { transports: ["websocket"] });
 
     socket.current.on("connect", () => {
       console.log("✅ Connected to backend socket");
@@ -121,7 +124,7 @@ const VideoFeed = () => {
 
     try {
       const res = await axios.post(
-        "http://127.0.0.1:5002/ask_ai",
+        `${API_BASE_URL}/ask_ai`,
         { message: messageToSend },
         { timeout: 30000 }
       );
@@ -230,7 +233,7 @@ const VideoFeed = () => {
               className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
               onClick={() =>
                 axios
-                  .post("http://127.0.0.1:5002/calibrate")
+                  .post(`${API_BASE_URL}/calibrate`)
                   .then(() => alert("Calibration started — check backend console"))
                   .catch(() => alert("Calibration failed. See backend console."))
               }
