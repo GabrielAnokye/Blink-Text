@@ -1,4 +1,4 @@
-# 👁️ BlinkAI — Hands-Free Communication via Eye Blinks
+# 👁️ Blink-Text — Hands-Free Communication via Eye Blinks
 
 BlinkAI is an **assistive AI system** designed to help users with **limited mobility** communicate **entirely through eye blinks**.  
 It uses **computer vision** to detect blinks, converts them into **Morse code**, and translates the Morse into text — which is then processed by an **AI chatbot** for natural, conversational responses.
@@ -84,7 +84,7 @@ Morse translation — The system builds your message in real time.
 
 Auto-send — When you stop blinking for ~4 seconds, the message is sent to AI.
 
-AI reply — BlinkAI responds naturally and concisely.
+AI reply — Blink-Text responds naturally and concisely.
 
 🧭 Interface Overview
 Section	            Description
