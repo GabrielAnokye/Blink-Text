@@ -60,20 +60,34 @@ pause_threshold = 4.0
 
 is_calibrating = False
 calibration_values = []
+has_manual_calibration = False
+auto_open_ear_ema = None
+auto_ear_samples = 0
+
+AUTO_BASELINE_MIN_SAMPLES = 20
+AUTO_BASELINE_ALPHA = 0.15
+AUTO_THRESHOLD_MARGIN = 0.08
 
 @app.route("/")
 def home():
     return jsonify({"message": "BlinkAI backend is running with native threads."})
 
-def check_auto_send():
+def check_auto_send(current_time):
     global last_message_activity_time, current_message
-    if time.time() - last_message_activity_time > pause_threshold and current_message:
+
+    # Do not auto-send while user is still composing a symbol/letter.
+    if current_sequence:
+        return
+    if current_time - last_blink_time <= DELAY_BETWEEN_LETTERS:
+        return
+
+    if current_time - last_message_activity_time > pause_threshold and current_message:
         msg = current_message.strip()
         if msg:
             print(f"[AUTO-SEND] Triggered: {msg}")
             socketio.emit("send_message", {"text": msg})
-            current_message = ""  
-            last_message_activity_time = time.time()
+            current_message = ""
+            last_message_activity_time = current_time
 
 def morse_to_text(sequence):
     return MORSE_CODE_DICT.get(sequence, "")
@@ -81,6 +95,7 @@ def morse_to_text(sequence):
 @socketio.on("video_frame")
 def handle_video_frame(data):
     global current_sequence, last_blink_time, current_message, is_calibrating, calibration_values, last_message_activity_time
+    global has_manual_calibration, auto_open_ear_ema, auto_ear_samples
     
     image_data = data.get("image")
     if not image_data:
@@ -106,6 +121,21 @@ def handle_video_frame(data):
     current_ear = getattr(safe_detector, "current_ear", None)
     if is_calibrating and current_ear is not None and current_ear > 0:
         calibration_values.append(float(current_ear))
+
+    # Optional auto-baseline so users can blink immediately without manual calibration.
+    if (not is_calibrating) and (not has_manual_calibration) and current_ear is not None and current_ear > 0:
+        ear = float(current_ear)
+        if auto_open_ear_ema is None:
+            auto_open_ear_ema = ear
+        else:
+            alpha = AUTO_BASELINE_ALPHA
+            auto_open_ear_ema = (alpha * ear) + ((1.0 - alpha) * auto_open_ear_ema)
+
+        auto_ear_samples += 1
+        safe_detector.EAR_THRESHOLD = max(0.05, auto_open_ear_ema - AUTO_THRESHOLD_MARGIN)
+
+        if auto_ear_samples == AUTO_BASELINE_MIN_SAMPLES:
+            print(f"✅ Auto-baseline ready. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
 
     if blink_type:
         symbol = '.' if blink_type == "DOT" else '-'
@@ -135,7 +165,7 @@ def handle_video_frame(data):
 
         current_sequence = ""
 
-    check_auto_send()
+    check_auto_send(current_time)
 
 @app.route("/ask_ai", methods=["POST"])
 def ask_ai():
@@ -185,7 +215,7 @@ def ask_ai():
 
 @app.route("/calibrate", methods=["POST"])
 def calibrate():
-    global is_calibrating, calibration_values
+    global is_calibrating, calibration_values, has_manual_calibration
     safe_detector = get_detector()
     is_calibrating = True
     calibration_values = []
@@ -202,12 +232,14 @@ def calibrate():
     if calibration_values:
         avg_open = sum(calibration_values) / len(calibration_values)
         safe_detector.EAR_THRESHOLD = max(0.05, avg_open - 0.08)
+        has_manual_calibration = True
         print(f"✅ Calibration complete. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
         return jsonify({"threshold": safe_detector.EAR_THRESHOLD}), 200
     else:
         current_ear = getattr(safe_detector, "current_ear", None)
         if current_ear is not None and current_ear > 0:
             safe_detector.EAR_THRESHOLD = max(0.05, float(current_ear) - 0.08)
+            has_manual_calibration = True
             print(f"✅ Calibration fallback used. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
             return jsonify({"threshold": safe_detector.EAR_THRESHOLD, "fallback": True}), 200
 
