@@ -84,6 +84,7 @@ def handle_video_frame(data):
 
     # Run detection
     blink_type = detector.detect_blink(frame)
+    eventlet.sleep(0)  # Yield to allow other events to process
     current_time = time.time()
 
     # Handle calibration recording

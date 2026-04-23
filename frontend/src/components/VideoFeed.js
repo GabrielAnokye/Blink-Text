@@ -122,7 +122,7 @@ const VideoFeed = () => {
               socket.current.emit("video_frame", { image: imageData });
             }
           }
-        }, 100); 
+        }, 250); 
 
       } catch (err) {
         console.error("Webcam access error:", err);
