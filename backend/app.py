@@ -7,7 +7,6 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from dotenv import load_dotenv
-from blink_detection.blink_detector import BlinkDetector
 import cohere
 
 load_dotenv()
@@ -18,11 +17,23 @@ co = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 app = Flask(__name__)
 CORS(app)
 
-# CRITICAL FIX 1: Switch from 'eventlet' to native 'threading'
+# Explicitly force threading, ignoring any leftover async libraries
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 print(f"Async mode: {socketio.async_mode}")
 
-detector = BlinkDetector()
+# ---------------------------------------------------------
+# CRITICAL FIX: Lazy Initialization for MediaPipe
+# ---------------------------------------------------------
+detector = None
+
+def get_detector():
+    """Only initializes MediaPipe AFTER Gunicorn forks the worker process."""
+    global detector
+    if detector is None:
+        from blink_detection.blink_detector import BlinkDetector
+        detector = BlinkDetector()
+        print("✅ MediaPipe initialized safely inside worker thread.")
+    return detector
 
 MORSE_CODE_DICT = {
     '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
@@ -78,11 +89,13 @@ def handle_video_frame(data):
         print(f"Frame decode error: {e}")
         return
 
-    blink_type = detector.detect_blink(frame)
+    # Safely get the initialized detector
+    safe_detector = get_detector()
+    blink_type = safe_detector.detect_blink(frame)
     current_time = time.time()
 
-    if is_calibrating and getattr(detector, "current_ear", None):
-        calibration_values.append(detector.current_ear)
+    if is_calibrating and getattr(safe_detector, "current_ear", None):
+        calibration_values.append(safe_detector.current_ear)
 
     if blink_type:
         symbol = '.' if blink_type == "DOT" else '-'
@@ -91,7 +104,7 @@ def handle_video_frame(data):
         socketio.emit("blink_event", {
             "type": blink_type,
             "sequence": current_sequence,
-            "confidence": getattr(detector, "blink_confidence", None)
+            "confidence": getattr(safe_detector, "blink_confidence", None)
         })
 
     if current_sequence and (current_time - last_blink_time > DELAY_BETWEEN_LETTERS):
@@ -140,8 +153,7 @@ def ask_ai():
                 "Each blink is translated into Morse code, which then becomes text. "
                 "Because blinking is slow and tiring, users may sometimes send incomplete or misspelled words. "
                 "Your job is to interpret their intent as best as possible, infer missing words, and respond naturally. "
-                "Keep replies short, kind, and easy to read. Avoid markdown symbols like asterisks (*); "
-                "instead, use plain text for emphasis when needed."
+                "Keep replies short, kind, and easy to read."
             ),
         )
 
@@ -165,15 +177,16 @@ def calibrate():
     is_calibrating = True
     calibration_values = []
     
-    # CRITICAL FIX 2: Use standard blocking sleep on a native thread
     time.sleep(3)
     is_calibrating = False
 
+    safe_detector = get_detector()
+
     if calibration_values:
         avg_open = sum(calibration_values) / len(calibration_values)
-        detector.EAR_THRESHOLD = avg_open - 0.1
-        print(f"✅ Calibration complete. EAR_THRESHOLD = {detector.EAR_THRESHOLD:.3f}")
-        return jsonify({"threshold": detector.EAR_THRESHOLD}), 200
+        safe_detector.EAR_THRESHOLD = avg_open - 0.1
+        print(f"✅ Calibration complete. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
+        return jsonify({"threshold": safe_detector.EAR_THRESHOLD}), 200
     else:
         print("❌ Calibration failed — no EAR values detected.")
         return jsonify({"error": "No EAR values captured."}), 400
