@@ -156,7 +156,7 @@ const VideoFeed = () => {
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
 
-        // Send frames to backend at ~10 FPS
+        // Send frames to backend at ~10 FPS for better blink-duration resolution.
         streamingInterval.current = setInterval(() => {
           if (videoRef.current && socket.current && socket.current.connected) {
             canvas.width = videoRef.current.videoWidth || 640;
@@ -164,12 +164,12 @@ const VideoFeed = () => {
             
             if (canvas.width > 0 && canvas.height > 0) {
               context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-              // Use JPEG with 0.5 quality to save massive amounts of bandwidth
-              const imageData = canvas.toDataURL("image/jpeg", 0.5);
+              // Keep payload size moderate while improving temporal accuracy.
+              const imageData = canvas.toDataURL("image/jpeg", 0.45);
               socket.current.emit("video_frame", { image: imageData });
             }
           }
-        }, 250); 
+        }, 100); 
 
       } catch (err) {
         console.error("Webcam access error:", err);

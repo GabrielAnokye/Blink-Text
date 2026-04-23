@@ -53,9 +53,9 @@ MORSE_CODE_DICT = {
 current_sequence = ""
 current_message = ""
 last_blink_time = time.time()
-DELAY_BETWEEN_LETTERS = 2.0  
+DELAY_BETWEEN_LETTERS = 1.2  
 conversation_history = []
-pause_threshold = 4  
+pause_threshold = 2.5  
 
 is_calibrating = False
 calibration_values = []

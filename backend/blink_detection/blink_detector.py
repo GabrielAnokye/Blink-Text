@@ -12,8 +12,14 @@ class BlinkDetector:
         self.blink_detected = False
         self.blink_start_time = 0
         self.EAR_THRESHOLD = 0.11
-        self.LONG_BLINK_DURATION = 0.4
+        self.LONG_BLINK_DURATION = 0.5
+        self.MIN_BLINK_DURATION = 0.06
+        self.MAX_BLINK_DURATION = 1.2
+        self.BLINK_COOLDOWN = 0.12
+        self.EAR_SMOOTHING_ALPHA = 0.35
         self.current_ear = 0.0
+        self._smoothed_ear = None
+        self._last_emitted_blink_time = 0.0
         self._process_lock = Lock()
         self._reset_lock = Lock()
 
@@ -61,7 +67,13 @@ class BlinkDetector:
                     landmarks = [(int(p.x * w), int(p.y * h)) for p in face_landmarks.landmark]
                     left_EAR = self.eye_aspect_ratio(landmarks, LEFT_EYE)
                     right_EAR = self.eye_aspect_ratio(landmarks, RIGHT_EYE)
-                    ear = (left_EAR + right_EAR) / 2.0
+                    raw_ear = (left_EAR + right_EAR) / 2.0
+                    if self._smoothed_ear is None:
+                        self._smoothed_ear = raw_ear
+                    else:
+                        alpha = self.EAR_SMOOTHING_ALPHA
+                        self._smoothed_ear = (alpha * raw_ear) + ((1.0 - alpha) * self._smoothed_ear)
+                    ear = self._smoothed_ear
                     self.current_ear = ear  # continuously update
 
                     now = time.time()
@@ -72,6 +84,14 @@ class BlinkDetector:
                     elif self.blink_detected:
                         blink_duration = now - self.blink_start_time
                         self.blink_detected = False
+                        if blink_duration < self.MIN_BLINK_DURATION:
+                            return None
+                        if blink_duration > self.MAX_BLINK_DURATION:
+                            return None
+                        if (now - self._last_emitted_blink_time) < self.BLINK_COOLDOWN:
+                            return None
+
+                        self._last_emitted_blink_time = now
                         return "DASH" if blink_duration >= self.LONG_BLINK_DURATION else "DOT"
 
             return None
