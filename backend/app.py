@@ -3,6 +3,7 @@ import numpy as np
 import time
 import os
 import cv2
+from threading import Lock
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
@@ -25,14 +26,17 @@ print(f"Async mode: {socketio.async_mode}")
 # CRITICAL FIX: Lazy Initialization for MediaPipe
 # ---------------------------------------------------------
 detector = None
+detector_lock = Lock()
 
 def get_detector():
     """Only initializes MediaPipe AFTER Gunicorn forks the worker process."""
     global detector
     if detector is None:
-        from blink_detection.blink_detector import BlinkDetector
-        detector = BlinkDetector()
-        print("✅ MediaPipe initialized safely inside worker thread.")
+        with detector_lock:
+            if detector is None:
+                from blink_detection.blink_detector import BlinkDetector
+                detector = BlinkDetector()
+                print("✅ MediaPipe initialized safely inside worker thread.")
     return detector
 
 MORSE_CODE_DICT = {
@@ -94,8 +98,9 @@ def handle_video_frame(data):
     blink_type = safe_detector.detect_blink(frame)
     current_time = time.time()
 
-    if is_calibrating and getattr(safe_detector, "current_ear", None):
-        calibration_values.append(safe_detector.current_ear)
+    current_ear = getattr(safe_detector, "current_ear", None)
+    if is_calibrating and current_ear is not None and current_ear > 0:
+        calibration_values.append(float(current_ear))
 
     if blink_type:
         symbol = '.' if blink_type == "DOT" else '-'
@@ -174,22 +179,33 @@ def ask_ai():
 @app.route("/calibrate", methods=["POST"])
 def calibrate():
     global is_calibrating, calibration_values
+    safe_detector = get_detector()
     is_calibrating = True
     calibration_values = []
-    
-    time.sleep(3)
-    is_calibrating = False
 
-    safe_detector = get_detector()
+    # Collect EAR values from incoming video frames for up to 4 seconds.
+    start_time = time.time()
+    while time.time() - start_time < 4:
+        if len(calibration_values) >= 15:
+            break
+        time.sleep(0.1)
+
+    is_calibrating = False
 
     if calibration_values:
         avg_open = sum(calibration_values) / len(calibration_values)
-        safe_detector.EAR_THRESHOLD = avg_open - 0.1
+        safe_detector.EAR_THRESHOLD = max(0.05, avg_open - 0.08)
         print(f"✅ Calibration complete. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
         return jsonify({"threshold": safe_detector.EAR_THRESHOLD}), 200
     else:
+        current_ear = getattr(safe_detector, "current_ear", None)
+        if current_ear is not None and current_ear > 0:
+            safe_detector.EAR_THRESHOLD = max(0.05, float(current_ear) - 0.08)
+            print(f"✅ Calibration fallback used. EAR_THRESHOLD = {safe_detector.EAR_THRESHOLD:.3f}")
+            return jsonify({"threshold": safe_detector.EAR_THRESHOLD, "fallback": True}), 200
+
         print("❌ Calibration failed — no EAR values detected.")
-        return jsonify({"error": "No EAR values captured."}), 400
+        return jsonify({"error": "No EAR values captured. Keep face centered and camera active."}), 400
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")

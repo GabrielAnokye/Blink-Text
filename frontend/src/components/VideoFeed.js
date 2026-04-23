@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
 
-const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5002";
+const API_BASE_URL = (process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5002").replace(/\/+$/, "");
 
 const MORSE_MAP = {
   A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.",
@@ -17,10 +17,9 @@ const VideoFeed = () => {
   const [sequence, setSequence] = useState("");
   const [decodedText, setDecodedText] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
-  const [confidence, setConfidence] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [blinkCount, setBlinkCount] = useState(0);
-  const [accuracy, setAccuracy] = useState(100);
+  const [accuracy] = useState(100);
   const [wpm, setWpm] = useState(0);
   const [startTime, setStartTime] = useState(null);
 
@@ -28,25 +27,74 @@ const VideoFeed = () => {
   const socket = useRef(null);
   const chatContainer = useRef(null);
   const streamingInterval = useRef(null);
+  const decodedTextRef = useRef("");
+  const aiLoadingRef = useRef(false);
+  const startTimeRef = useRef(null);
+
+  useEffect(() => {
+    decodedTextRef.current = decodedText;
+  }, [decodedText]);
+
+  useEffect(() => {
+    aiLoadingRef.current = aiLoading;
+  }, [aiLoading]);
+
+  useEffect(() => {
+    startTimeRef.current = startTime;
+  }, [startTime]);
+
+  const sendToAI = async (rawMessage) => {
+    const messageToSend = (rawMessage || "").trim();
+    if (!messageToSend || aiLoadingRef.current) return;
+
+    setAiLoading(true);
+    setChatHistory((prev) => [{ sender: "You", text: messageToSend }, ...prev]);
+    setDecodedText("");
+
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/ask_ai`,
+        { message: messageToSend },
+        { timeout: 30000 }
+      );
+      const replyText = res.data && res.data.reply ? res.data.reply : "No reply from AI.";
+      setChatHistory((prev) => [
+        { sender: "BlinkAI", text: replyText },
+        ...prev,
+      ]);
+    } catch (err) {
+      console.error("AI request error:", err);
+      setChatHistory((prev) => [
+        { sender: "BlinkAI", text: "Error contacting AI." },
+        ...prev,
+      ]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Socket connection setup
   useEffect(() => {
-    socket.current = io(API_BASE_URL, { transports: ["websocket"] });
+    socket.current = io(API_BASE_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      timeout: 20000,
+    });
 
     socket.current.on("connect", () => {
       console.log("✅ Connected to backend socket");
+    });
+
+    socket.current.on("connect_error", (err) => {
+      console.error("❌ Socket connection error:", err?.message || err);
     });
 
     socket.current.on("blink_event", (data) => {
       setBlink(data.type);
       setSequence(data.sequence || "");
       setBlinkCount((prev) => prev + 1);
-      if (data.confidence !== undefined && data.confidence !== null) {
-        setConfidence(Math.round(data.confidence * 100));
-      } else {
-        setConfidence(null);
-      }
-      if (!startTime) setStartTime(Date.now());
+      if (!startTimeRef.current) setStartTime(Date.now());
     });
 
     socket.current.on("letter_event", (data) => {
@@ -60,10 +108,10 @@ const VideoFeed = () => {
     });
 
     socket.current.on("send_message", (data) => {
-      const autoMessage = data.text || decodedText;
-      if (autoMessage && !aiLoading) {
+      const autoMessage = (data && data.text) || decodedTextRef.current;
+      if (autoMessage && !aiLoadingRef.current) {
         console.log("⚡ Auto-send triggered:", autoMessage);
-        handleSendToAI(autoMessage);
+        sendToAI(autoMessage);
       }
     });
 
@@ -78,9 +126,8 @@ const VideoFeed = () => {
 
     return () => {
       socket.current.disconnect();
-      if (streamingInterval.current) clearInterval(streamingInterval.current);
     };
-  }, [decodedText, aiLoading, startTime]);
+  }, []);
 
   // Compute Words Per Minute
   useEffect(() => {
@@ -89,7 +136,7 @@ const VideoFeed = () => {
     const words = decodedText.trim().split(/\s+/).length;
     const wpmCalc = Math.max(0, (words / elapsedMinutes).toFixed(1));
     setWpm(wpmCalc);
-  }, [decodedText]);
+  }, [decodedText, startTime]);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
@@ -138,33 +185,8 @@ const VideoFeed = () => {
 
   // --- AI SEND HANDLER ---
   const handleSendToAI = async (messageOverride = null) => {
-    const messageToSend = messageOverride || decodedText.trim();
-    if (!messageToSend) return;
-
-    setAiLoading(true);
-    setChatHistory((prev) => [{ sender: "You", text: messageToSend }, ...prev]);
-    setDecodedText("");
-
-    try {
-      const res = await axios.post(
-        `${API_BASE_URL}/ask_ai`,
-        { message: messageToSend },
-        { timeout: 30000 }
-      );
-      const replyText = res.data && res.data.reply ? res.data.reply : "No reply from AI.";
-      setChatHistory((prev) => [
-        { sender: "BlinkAI", text: replyText },
-        ...prev,
-      ]);
-    } catch (err) {
-      console.error("AI request error:", err);
-      setChatHistory((prev) => [
-        { sender: "BlinkAI", text: "Error contacting AI." },
-        ...prev,
-      ]);
-    } finally {
-      setAiLoading(false);
-    }
+    const messageToSend = messageOverride || decodedTextRef.current;
+    await sendToAI(messageToSend);
   };
 
   const handleSpace = () => setDecodedText((prev) => prev + " ");
