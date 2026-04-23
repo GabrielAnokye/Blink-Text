@@ -305,13 +305,13 @@ const VideoFeed = () => {
               onClick={() =>
                 axios
                   .post(`${API_BASE_URL}/calibrate`)
-                  .then(() => alert("Calibration finished successfully."))
+                  .then(() => alert("Calibration finished successfully (4 seconds)."))
                   .catch(() =>
                     alert("Calibration failed. See backend console."),
                   )
               }
             >
-              Calibrate (3s)
+              Calibrate (4s)
             </button>
             <button
               className="px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600"

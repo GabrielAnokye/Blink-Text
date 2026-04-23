@@ -53,9 +53,10 @@ MORSE_CODE_DICT = {
 current_sequence = ""
 current_message = ""
 last_blink_time = time.time()
+last_message_activity_time = time.time()
 DELAY_BETWEEN_LETTERS = 1.2  
 conversation_history = []
-pause_threshold = 2.5  
+pause_threshold = 4.0  
 
 is_calibrating = False
 calibration_values = []
@@ -65,21 +66,21 @@ def home():
     return jsonify({"message": "BlinkAI backend is running with native threads."})
 
 def check_auto_send():
-    global last_blink_time, current_message
-    if time.time() - last_blink_time > pause_threshold and current_message:
+    global last_message_activity_time, current_message
+    if time.time() - last_message_activity_time > pause_threshold and current_message:
         msg = current_message.strip()
         if msg:
             print(f"[AUTO-SEND] Triggered: {msg}")
             socketio.emit("send_message", {"text": msg})
             current_message = ""  
-            last_blink_time = time.time()
+            last_message_activity_time = time.time()
 
 def morse_to_text(sequence):
     return MORSE_CODE_DICT.get(sequence, "")
 
 @socketio.on("video_frame")
 def handle_video_frame(data):
-    global current_sequence, last_blink_time, current_message, is_calibrating, calibration_values
+    global current_sequence, last_blink_time, current_message, is_calibrating, calibration_values, last_message_activity_time
     
     image_data = data.get("image")
     if not image_data:
@@ -127,6 +128,8 @@ def handle_video_frame(data):
                 current_message += " "
             else:
                 current_message += letter
+
+            last_message_activity_time = current_time
 
             print(f"[Decoded] {letter} → Current message: {current_message}")
 
