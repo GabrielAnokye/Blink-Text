@@ -95,7 +95,11 @@ def handle_video_frame(data):
 
     # Safely get the initialized detector
     safe_detector = get_detector()
-    blink_type = safe_detector.detect_blink(frame)
+    try:
+        blink_type = safe_detector.detect_blink(frame)
+    except Exception as e:
+        print(f"Blink detection error: {e}")
+        return
     current_time = time.time()
 
     current_ear = getattr(safe_detector, "current_ear", None)
