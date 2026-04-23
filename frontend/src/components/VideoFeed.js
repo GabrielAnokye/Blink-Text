@@ -2,14 +2,37 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
 
-const API_BASE_URL = (process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5002").replace(/\/+$/, "");
+const API_BASE_URL = (
+  process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:5002"
+).replace(/\/+$/, "");
 
 const MORSE_MAP = {
-  A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.",
-  G: "--.", H: "....", I: "..", J: ".---", K: "-.-", L: ".-..",
-  M: "--", N: "-.", O: "---", P: ".--.", Q: "--.-", R: ".-.",
-  S: "...", T: "-", U: "..-", V: "...-", W: ".--", X: "-..-",
-  Y: "-.--", Z: "--..",
+  A: ".-",
+  B: "-...",
+  C: "-.-.",
+  D: "-..",
+  E: ".",
+  F: "..-.",
+  G: "--.",
+  H: "....",
+  I: "..",
+  J: ".---",
+  K: "-.-",
+  L: ".-..",
+  M: "--",
+  N: "-.",
+  O: "---",
+  P: ".--.",
+  Q: "--.-",
+  R: ".-.",
+  S: "...",
+  T: "-",
+  U: "..-",
+  V: "...-",
+  W: ".--",
+  X: "-..-",
+  Y: "-.--",
+  Z: "--..",
 };
 
 const VideoFeed = () => {
@@ -55,9 +78,10 @@ const VideoFeed = () => {
       const res = await axios.post(
         `${API_BASE_URL}/ask_ai`,
         { message: messageToSend },
-        { timeout: 30000 }
+        { timeout: 30000 },
       );
-      const replyText = res.data && res.data.reply ? res.data.reply : "No reply from AI.";
+      const replyText =
+        res.data && res.data.reply ? res.data.reply : "No reply from AI.";
       setChatHistory((prev) => [
         { sender: "BlinkAI", text: replyText },
         ...prev,
@@ -149,7 +173,9 @@ const VideoFeed = () => {
   useEffect(() => {
     const startVideo = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
         if (videoRef.current) videoRef.current.srcObject = stream;
 
         // Setup canvas for capturing frames
@@ -161,23 +187,28 @@ const VideoFeed = () => {
           if (videoRef.current && socket.current && socket.current.connected) {
             canvas.width = videoRef.current.videoWidth || 640;
             canvas.height = videoRef.current.videoHeight || 480;
-            
+
             if (canvas.width > 0 && canvas.height > 0) {
-              context.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+              context.drawImage(
+                videoRef.current,
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+              );
               // Keep payload size moderate while improving temporal accuracy.
               const imageData = canvas.toDataURL("image/jpeg", 0.45);
               socket.current.emit("video_frame", { image: imageData });
             }
           }
-        }, 100); 
-
+        }, 100);
       } catch (err) {
         console.error("Webcam access error:", err);
         alert("Unable to access webcam. Please allow camera permissions.");
       }
     };
     startVideo();
-    
+
     return () => {
       if (streamingInterval.current) clearInterval(streamingInterval.current);
     };
@@ -205,10 +236,15 @@ const VideoFeed = () => {
       <main className="w-full flex justify-between gap-6">
         {/* LEFT: Morse Reference */}
         <aside className="w-1/4 bg-gray-800 rounded-2xl shadow-lg p-5 border border-gray-700 overflow-y-auto">
-          <h3 className="text-xl font-bold text-gray-200 mb-4 text-center">Morse Reference</h3>
+          <h3 className="text-xl font-bold text-gray-200 mb-4 text-center">
+            Morse Reference
+          </h3>
           <div className="grid grid-cols-2 gap-2 text-sm">
             {Object.entries(MORSE_MAP).map(([letter, code]) => (
-              <div key={letter} className="bg-gray-700 p-2 rounded-md flex justify-between items-center border border-gray-600">
+              <div
+                key={letter}
+                className="bg-gray-700 p-2 rounded-md flex justify-between items-center border border-gray-600"
+              >
                 <span className="font-bold">{letter}</span>
                 <span className="font-mono text-blue-300">{code}</span>
               </div>
@@ -235,7 +271,9 @@ const VideoFeed = () => {
           />
           {aiLoading && (
             <div className="absolute inset-0 bg-gray-900/70 flex items-center justify-center rounded-lg">
-              <p className="text-xl text-blue-300 animate-pulse font-semibold">Sending to AI...</p>
+              <p className="text-xl text-blue-300 animate-pulse font-semibold">
+                Sending to AI...
+              </p>
             </div>
           )}
 
@@ -247,7 +285,10 @@ const VideoFeed = () => {
               Sequence: <span className="font-mono">{sequence || "..."}</span>
             </p>
             <p className="text-xl font-bold text-green-400 mt-2">
-              Message: {decodedText || <span className="text-gray-500">Building...</span>}
+              Message:{" "}
+              {decodedText || (
+                <span className="text-gray-500">Building...</span>
+              )}
             </p>
           </div>
 
@@ -265,25 +306,48 @@ const VideoFeed = () => {
                 axios
                   .post(`${API_BASE_URL}/calibrate`)
                   .then(() => alert("Calibration finished successfully."))
-                  .catch(() => alert("Calibration failed. See backend console."))
+                  .catch(() =>
+                    alert("Calibration failed. See backend console."),
+                  )
               }
             >
               Calibrate (3s)
             </button>
-            <button className="px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600" onClick={handleSpace}>Space</button>
-            <button className="px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600" onClick={handleBackspace}>Backspace</button>
-            <button className="px-3 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800" onClick={handleClear}>Clear</button>
+            <button
+              className="px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600"
+              onClick={handleSpace}
+            >
+              Space
+            </button>
+            <button
+              className="px-3 py-2 bg-gray-700 rounded-lg hover:bg-gray-600"
+              onClick={handleBackspace}
+            >
+              Backspace
+            </button>
+            <button
+              className="px-3 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800"
+              onClick={handleClear}
+            >
+              Clear
+            </button>
           </div>
         </section>
 
         {/* RIGHT: Chat */}
         <aside className="w-1/4 bg-gray-800 rounded-2xl shadow-lg p-5 flex flex-col border border-gray-700">
-          <h3 className="text-xl font-bold text-gray-200 mb-3 text-center">Chat</h3>
+          <h3 className="text-xl font-bold text-gray-200 mb-3 text-center">
+            Chat
+          </h3>
           <div
             ref={chatContainer}
             className="flex flex-col-reverse gap-2 overflow-y-auto h-[400px] p-3 bg-gray-900 rounded-lg border border-gray-700"
           >
-            {chatHistory.length === 0 && <p className="text-sm text-gray-500 text-center">No messages yet</p>}
+            {chatHistory.length === 0 && (
+              <p className="text-sm text-gray-500 text-center">
+                No messages yet
+              </p>
+            )}
             {chatHistory.map((msg, idx) => (
               <div
                 key={idx}
@@ -293,7 +357,9 @@ const VideoFeed = () => {
                     : "self-start bg-gray-700 text-gray-100"
                 }`}
               >
-                <strong className="block text-xs text-gray-400">{msg.sender}</strong>
+                <strong className="block text-xs text-gray-400">
+                  {msg.sender}
+                </strong>
                 <div className="text-sm">{msg.text}</div>
               </div>
             ))}
@@ -305,9 +371,13 @@ const VideoFeed = () => {
       <div className="fixed bottom-6 right-6 bg-gray-900/80 backdrop-blur-md text-gray-100 px-5 py-3 rounded-2xl shadow-lg border border-gray-700 flex flex-col items-center w-[160px]">
         <div className="text-center">
           <p className="text-3xl font-extrabold text-blue-400">{blinkCount}</p>
-          <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Blinks</p>
+          <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">
+            Blinks
+          </p>
           <p className="text-3xl font-extrabold text-green-400">{accuracy}%</p>
-          <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Accuracy</p>
+          <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">
+            Accuracy
+          </p>
           <p className="text-3xl font-extrabold text-indigo-400">{wpm}</p>
           <p className="text-xs uppercase tracking-wide text-gray-400">WPM</p>
         </div>
